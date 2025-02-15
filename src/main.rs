@@ -192,6 +192,20 @@ fn patch_crate(
 }
 
 fn create_and_checkout_branch(branch_name: &str) -> Result<()> {
+    // Checkout the `main` branch
+    info!("Checking out the `main` branch...");
+    Cmd::new("git")
+        .args(["checkout", "main"])
+        .status()
+        .with_context(|| "Failed to checkout `main` branch")?;
+
+    // Pull the latest changes from `origin/main`
+    info!("Pulling latest changes from `origin/main`...");
+    Cmd::new("git")
+        .args(["pull", "origin", "main"])
+        .status()
+        .with_context(|| "Failed to pull from `origin/main`")?;
+
     Cmd::new("git")
         .args(["checkout", "-b", branch_name])
         .status()
