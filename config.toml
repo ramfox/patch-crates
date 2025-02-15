@@ -1,0 +1,13 @@
+# Name of the branch you want to create
+branch_name = "patch-iroh-main"
+
+# List of directories that need to be patched.
+# These should be absolute paths.
+directories = [
+    "/Users/ramfox/Work/quic-rpc",
+]
+
+# List of crates to patch and their GitHub repository URLs.
+[[crates]]
+name = "iroh"
+repo_url = "https://github.com/n0-computer/iroh.git"
