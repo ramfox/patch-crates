@@ -166,6 +166,12 @@ fn patch_crate(
 
     // Commit changes if there are updated crates
     if !updated_crates.is_empty() {
+        // Run `cargo update` to update dependencies
+        info!("Running `cargo update`...");
+        Cmd::new("cargo")
+            .args(["update"])
+            .status()
+            .with_context(|| "Failed to run `cargo update`")?;
         commit_changes(&updated_crates)?;
     }
 
@@ -322,7 +328,7 @@ fn commit_changes(updated_crates: &[Crate]) -> Result<()> {
 
     // Stage the changes
     Cmd::new("git")
-        .args(["add", "Cargo.toml"])
+        .args(["add", "Cargo.toml", "Cargo.lock"])
         .status()
         .with_context(|| "Failed to stage changes")?;
 
@@ -377,6 +383,11 @@ fn cleanup_branches(directories: &[PathBuf]) -> Result<()> {
     for dir in directories {
         info!("Cleaning up in {}", dir.display());
         if std::env::set_current_dir(dir).is_ok() {
+            Cmd::new("git")
+                .args(["checkout", "main"])
+                .status()
+                .with_context(|| "Failed to checkout `main` branch")?;
+
             Cmd::new("git")
                 .args(["branch", "-D", "patch-iroh-main"])
                 .status()
