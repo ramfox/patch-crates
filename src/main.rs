@@ -365,7 +365,7 @@ fn create_pull_request(branch_name: &str, relevant_crates: &[Crate]) -> Result<(
             "pr",
             "create",
             "--title",
-            "Patch crates to use main branch of iroh dependencies",
+            "chore: patch crates to use main branch of iroh dependencies",
             "--body",
             &pr_body,
             "--base",
