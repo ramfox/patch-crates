@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use log::{error, info};
 use serde::Deserialize;
@@ -51,6 +51,10 @@ enum Commands {
     },
     /// Cleanup branches
     Cleanup,
+    /// Update each main
+    Update,
+    /// Reset main
+    Reset,
 }
 
 fn main() -> Result<()> {
@@ -74,6 +78,8 @@ fn main() -> Result<()> {
             execute,
         )?,
         Commands::Cleanup => cleanup_branches(&config.directories)?,
+        Commands::Update => update_and_check(&config.directories, &config.crates)?,
+        Commands::Reset => reset(&config.directories)?,
     }
 
     Ok(())
@@ -145,6 +151,7 @@ fn patch_crate(
     std::env::set_current_dir(directory)?;
     let dir_name = directory.file_name().expect("checked");
     info!("Working with repo {dir_name:?}");
+
     // Check if the branch already exists
     let branch_exists = Cmd::new("git")
         .args(["rev-parse", "--verify", branch_name])
@@ -164,14 +171,16 @@ fn patch_crate(
     // Ensure patches are in Cargo.toml and get the list of updated crates
     let updated_crates = ensure_patches_in_cargo_toml(crates)?;
 
-    // Commit changes if there are updated crates
+    // If there are updated crates, update deny.toml if it exists
     if !updated_crates.is_empty() {
         // Run `cargo update` to update dependencies
         info!("Running `cargo update`...");
-        Cmd::new("cargo")
-            .args(["update"])
-            .status()
-            .with_context(|| "Failed to run `cargo update`")?;
+        cargo_update(&updated_crates)?;
+
+        // Check if deny.toml exists and update it
+        update_deny_toml(&updated_crates)?;
+
+        // Commit changes
         commit_changes(&updated_crates)?;
     }
 
@@ -186,7 +195,7 @@ fn patch_crate(
         let all_relevant_crates: Vec<Crate> = crates
             .iter()
             .filter(|c| existing_patches.contains(&c.name))
-            .cloned() // Use `cloned()` to convert `&Crate` to `Crate`
+            .cloned()
             .collect();
 
         create_pull_request(branch_name, &all_relevant_crates)?;
@@ -216,6 +225,23 @@ fn create_and_checkout_branch(branch_name: &str) -> Result<()> {
         .args(["checkout", "-b", branch_name])
         .status()
         .with_context(|| "Failed to create and checkout branch")?;
+    Ok(())
+}
+
+fn cargo_update(updated_crates: &Vec<Crate>) -> anyhow::Result<()> {
+    // Start building the command
+    let mut cmd = Cmd::new("cargo");
+    cmd.arg("update");
+
+    // Add each crate to the command with the `--package` flag
+    for krate in updated_crates {
+        cmd.arg("--package").arg(&krate.name);
+    }
+
+    // Execute the command
+    cmd.status()
+        .with_context(|| "Failed to run `cargo update`")?;
+
     Ok(())
 }
 
@@ -365,7 +391,7 @@ fn create_pull_request(branch_name: &str, relevant_crates: &[Crate]) -> Result<(
             "pr",
             "create",
             "--title",
-            "chore: patch crates to use main branch of iroh dependencies",
+            "chore: patch to use main branch of iroh dependencies",
             "--body",
             &pr_body,
             "--base",
@@ -399,5 +425,214 @@ fn cleanup_branches(directories: &[PathBuf]) -> Result<()> {
         }
     }
     info!("Branches cleaned up.");
+    Ok(())
+}
+
+fn update_and_check(directories: &[PathBuf], crates: &Vec<Crate>) -> Result<()> {
+    info!("");
+    let mut successes = vec![];
+    let mut main_failures = vec![];
+    let mut update_failures = vec![];
+    let mut check_failures = vec![];
+    for dir in directories {
+        let dir_name = dir.file_name().expect("checked").to_str().expect("checked");
+        println!("Updating and checking {dir_name} on `main` branch");
+        if std::env::set_current_dir(dir).is_ok() {
+            if let Err(e) = checkout_and_pull() {
+                error!("{e:?}");
+                main_failures.push(dir_name);
+                continue;
+            };
+            let referenced_crates = match list_relevant_crates(crates) {
+                Err(e) => {
+                    error!("{e:?}");
+                    update_failures.push(dir_name);
+                    continue;
+                }
+                Ok(r) => r,
+            };
+            if let Err(e) = cargo_update(&referenced_crates) {
+                error!("Unable to run `cargo update` on {dir_name}: {e:?}");
+                update_failures.push(dir_name);
+                continue;
+            }
+            if let Err(e) = cargo_check() {
+                error!("Error running `cargo check` for {dir_name}: {e:?}");
+                check_failures.push(dir_name);
+                continue;
+            }
+            successes.push(dir_name);
+        }
+    }
+
+    if !successes.is_empty() {
+        info!("repos successfully updated and checked:");
+        for repo in successes {
+            info!("\t{repo}");
+        }
+    }
+
+    if !main_failures.is_empty() {
+        info!("repos that could not checkout `main`:");
+        for repo in main_failures {
+            info!("\t{repo}");
+        }
+    }
+
+    if !update_failures.is_empty() {
+        info!("repos that did not run `cargo update` successfully:");
+        for repo in update_failures {
+            info!("\t{repo}");
+        }
+    }
+
+    if !check_failures.is_empty() {
+        info!("repos that had an error in `cargo check`:");
+        for repo in check_failures {
+            info!("\t{repo}");
+        }
+    }
+    Ok(())
+}
+
+fn list_relevant_crates(crates: &[Crate]) -> Result<Vec<Crate>> {
+    let cargo_toml_path = Path::new("Cargo.toml");
+    let cargo_toml_content =
+        fs::read_to_string(cargo_toml_path).with_context(|| "Failed to read Cargo.toml")?;
+
+    // Parse Cargo.toml to find referenced dependencies
+    let referenced_crates = parse_referenced_crates(&cargo_toml_content)?;
+    let mut relevant_crates = vec![];
+    for krate in crates {
+        if referenced_crates.contains(&krate.name) {
+            relevant_crates.push(krate.clone());
+        }
+    }
+    Ok(relevant_crates)
+}
+
+fn cargo_check() -> Result<()> {
+    let output = Cmd::new("cargo")
+        .args(["check", "--all-targets", "--all-features"])
+        .output()
+        .with_context(|| "Failed to run `cargo check`")?;
+    if !output.status.success() {
+        bail!("`cargo check` failed with errors");
+    }
+    Ok(())
+}
+
+fn checkout_and_pull() -> Result<()> {
+    info!("Checking out `main`");
+    // Checkout main
+    Cmd::new("git")
+        .args(["checkout", "main"])
+        .status()
+        .with_context(|| "Failed to checkout `main`")?;
+    // Pull the latest changes from `origin/main`
+    info!("Pulling latest changes from `origin/main`...");
+    Cmd::new("git")
+        .args(["pull", "origin", "main"])
+        .status()
+        .with_context(|| "Failed to pull from `origin/main`")?;
+    Ok(())
+}
+
+fn reset(directories: &[PathBuf]) -> Result<()> {
+    let mut failures = vec![];
+    let mut successes = vec![];
+    for dir in directories {
+        let dir_name = dir.file_name().expect("checked").to_str().expect("checked");
+        println!("Reseting {dir_name}");
+        if std::env::set_current_dir(dir).is_ok() {
+            if let Err(e) = Cmd::new("git")
+                .arg("reset")
+                .arg("--hard")
+                .status()
+                .with_context(|| "Failed to run `cargo reset --hard`")
+            {
+                error!("{e:?}");
+                failures.push(dir_name);
+                continue;
+            }
+            successes.push(dir_name);
+        }
+    }
+
+    if !successes.is_empty() {
+        info!("repos successfully reset:");
+        for repo in successes {
+            info!("\t{repo}");
+        }
+    }
+
+    if !failures.is_empty() {
+        info!("repos that could not reset:");
+        for repo in failures {
+            info!("\t{repo}");
+        }
+    }
+    Ok(())
+}
+
+fn update_deny_toml(updated_crates: &[Crate]) -> Result<()> {
+    let deny_toml_path = Path::new("deny.toml");
+
+    // Check if deny.toml exists
+    if !deny_toml_path.exists() {
+        info!("No deny.toml file found. Skipping update.");
+        return Ok(());
+    }
+
+    // Read the existing deny.toml content
+    let deny_toml_content =
+        fs::read_to_string(deny_toml_path).with_context(|| "Failed to read deny.toml")?;
+
+    // Parse the deny.toml file
+    let mut deny_toml: toml::Value =
+        toml::from_str(&deny_toml_content).with_context(|| "Failed to parse deny.toml")?;
+
+    // Extract the list of unique git repo URLs from the updated crates
+    let mut git_repos: HashSet<String> =
+        updated_crates.iter().map(|c| c.repo_url.clone()).collect();
+
+    // Check if the `sources.allow-git` section already exists
+    if let Some(sources) = deny_toml.get_mut("sources") {
+        if let Some(allow_git) = sources.get_mut("allow-git") {
+            if let Some(existing_repos) = allow_git.as_array() {
+                // Add existing repos to the set to deduplicate
+                for repo in existing_repos {
+                    if let Some(repo_str) = repo.as_str() {
+                        git_repos.insert(repo_str.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Create or update the `sources.allow-git` section
+    let allow_git_value = toml::Value::Array(
+        git_repos
+            .into_iter()
+            .map(|repo| toml::Value::String(repo))
+            .collect(),
+    );
+
+    deny_toml
+        .as_table_mut()
+        .unwrap()
+        .entry("sources")
+        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()))
+        .as_table_mut()
+        .unwrap()
+        .insert("allow-git".to_string(), allow_git_value);
+
+    // Write the updated deny.toml back to the file
+    let updated_deny_toml_content =
+        toml::to_string_pretty(&deny_toml).with_context(|| "Failed to serialize deny.toml")?;
+    fs::write(deny_toml_path, updated_deny_toml_content)
+        .with_context(|| "Failed to write deny.toml")?;
+
+    info!("Updated deny.toml with allowed git repositories.");
     Ok(())
 }
