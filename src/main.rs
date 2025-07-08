@@ -1,3 +1,23 @@
+//! The primary purpose of this crate is to use the `patch` command to:
+//!   - create a new branch for each given repo
+//!   - take a list of repos you need to create git patches for in their
+//!     Cargo.toml files.
+//!   - take a list of repos that are the ones that need to be patched in the
+//!     above mentioned Cargo.toml files.
+//!   - patch each Cargo.toml file to point to the git version
+//!
+//! You can also run `cleanup` to remove the local and remote branches that were
+//! created, run `update` to ensure each repo has generated a new lock file that
+//! points to the correct versions of the dependencies, and `reset` to run
+//! `cargo reset --hard` for each repo.
+//!
+//! This is mostly powered through the config file. You can set a list of
+//! the directories that point to the repos you want updated (absolute paths),
+//! a list of of `crates`, aka the names and urls of the crates you want
+//! to patch and a `branch_name` that you want each branch for each
+//! repo to be called.
+//!
+
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use log::{error, info};
@@ -43,17 +63,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Patch the crates
+    /// Create a new branch for each repo, patching each crate's specific
+    /// dependencies to point to the github version of each.
+    ///
+    /// When `execute` is true, will also push the branches and creates PRs for each.
     Patch {
         /// Whether to execute the full process (push and create PR).
         #[arg(long, default_value_t = false)]
         execute: bool,
     },
-    /// Cleanup branches
+    /// Cleanup the created branches, deleting them locally and remotely
     Cleanup,
-    /// Update each main
+    /// Run `cargo update` (updating only the dependencies listed), and
+    /// `cargo check` on each repo
     Update,
-    /// Reset main
+    /// run `git reset --hard` on each repo
     Reset,
 }
 

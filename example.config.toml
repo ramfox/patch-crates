@@ -1,0 +1,50 @@
+# Name of the branch you want to create
+branch_name = "patch-iroh-main"
+
+# List of directories that need to be patched.
+# These should be absolute paths.
+directories = [
+    "/PATH/TO/irpc",
+    "/PATH/TO/iroh-gossip",
+    "/PATH/TO/iroh-c-ffi",
+    "/PATH/TO/dumbpipe",
+    "/PATH/TO/sendme",
+    "/PATH/TO/iroh-doctor",
+    "/PATH/TO/iroh-blobs",
+    "/PATH/TO/iroh-docs",
+]
+
+# List of crates to patch and their GitHub repository URLs.
+[[crates]]
+name = "iroh"
+repo_url = "https://github.com/n0-computer/iroh.git"
+
+[[crates]]
+name = "irpc"
+repo_url = "https://github.com/n0-computer/irpc.git"
+
+[[crates]]
+name = "iroh-base"
+repo_url = "https://github.com/n0-computer/iroh.git"
+
+[[crates]]
+name = "iroh-relay"
+repo_url = "https://github.com/n0-computer/iroh.git"
+
+[[crates]]
+name = "iroh-dns-server"
+repo_url = "https://github.com/n0-computer/iroh.git"
+
+[[crates]]
+name = "iroh-gossip"
+repo_url = "https://github.com/n0-computer/iroh-gossip.git"
+
+[[crates]]
+name = "iroh-blobs"
+repo_url = "https://github.com/n0-computer/iroh-blobs.git"
+
+[[crates]]
+name = "iroh-docs"
+repo_url = "https://github.com/n0-computer/iroh-docs.git"
+
+
