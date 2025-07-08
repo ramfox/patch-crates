@@ -376,9 +376,17 @@ fn commit_changes(updated_crates: &[Crate]) -> Result<()> {
         commit_body
     );
 
+    let mut args = vec!["add", "Cargo.toml", "Cargo.lock"];
+
+    let deny_toml_path = Path::new("deny.toml");
+    // Check if deny.toml exists
+    if deny_toml_path.exists() {
+        args.push("deny.toml");
+    }
+
     // Stage the changes
     Cmd::new("git")
-        .args(["add", "Cargo.toml", "Cargo.lock"])
+        .args(args)
         .status()
         .with_context(|| "Failed to stage changes")?;
 
