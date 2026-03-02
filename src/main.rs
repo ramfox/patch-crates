@@ -193,7 +193,7 @@ fn patch_crate(
     }
 
     // Ensure patches are in Cargo.toml and get the list of updated crates
-    let updated_crates = ensure_patches_in_cargo_toml(crates)?;
+    let updated_crates = ensure_patches_in_cargo_toml(crates, branch_name)?;
 
     // If there are updated crates, update deny.toml if it exists
     if !updated_crates.is_empty() {
@@ -253,12 +253,14 @@ fn create_and_checkout_branch(branch_name: &str) -> Result<()> {
 }
 
 fn cargo_update(updated_crates: &Vec<Crate>) -> anyhow::Result<()> {
+    info!("Updating...");
     // Start building the command
     let mut cmd = Cmd::new("cargo");
     cmd.arg("update");
 
     // Add each crate to the command with the `--package` flag
     for krate in updated_crates {
+        info!("package {}", &krate.name);
         cmd.arg("--package").arg(&krate.name);
     }
 
@@ -269,7 +271,7 @@ fn cargo_update(updated_crates: &Vec<Crate>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn ensure_patches_in_cargo_toml(crates: &[Crate]) -> Result<Vec<Crate>> {
+fn ensure_patches_in_cargo_toml(crates: &[Crate], branch_name: &str) -> Result<Vec<Crate>> {
     let cargo_toml_path = Path::new("Cargo.toml");
     let cargo_toml_content =
         fs::read_to_string(cargo_toml_path).with_context(|| "Failed to read Cargo.toml")?;
@@ -300,10 +302,21 @@ fn ensure_patches_in_cargo_toml(crates: &[Crate]) -> Result<Vec<Crate>> {
         if referenced_crates.contains(&crate_entry.name)
             && !existing_patches.contains(&crate_entry.name)
         {
-            let patch_line = format!(
-                "{} = {{ git = \"{}\", branch = \"main\" }}",
-                crate_entry.name, crate_entry.repo_url
-            );
+            let patch_line = if &crate_entry.name == "iroh"
+                || &crate_entry.name == "iroh-relay"
+                || &crate_entry.name == "iroh-dns-server"
+                || &crate_entry.name == "iroh-base"
+            {
+                format!(
+                    "{} = {{ git = \"{}\", branch = \"main\" }}",
+                    crate_entry.name, crate_entry.repo_url
+                )
+            } else {
+                format!(
+                    "{} = {{ git = \"{}\", branch = \"{}\" }}",
+                    crate_entry.name, crate_entry.repo_url, branch_name
+                )
+            };
             writeln!(cargo_toml, "{}", patch_line)
                 .with_context(|| "Failed to write to Cargo.toml")?;
             updated_crates.push(crate_entry.clone()); // Clone `crate_entry` properly
@@ -362,7 +375,7 @@ fn parse_existing_patches(cargo_toml_content: &str) -> Result<HashSet<String>> {
 fn commit_changes(updated_crates: &[Crate]) -> Result<()> {
     // Generate the commit message body (same as PR body)
     let commit_body = format!(
-        "This PR updates the following dependencies to use their main branches:\n\n{}",
+        "Updates the following dependencies to use their main branches:\n\n{}",
         updated_crates
             .iter()
             .map(|c| format!("- `{}` from `{}`", c.name, c.repo_url))
@@ -410,7 +423,7 @@ fn push_branch(branch_name: &str) -> Result<()> {
 fn create_pull_request(branch_name: &str, relevant_crates: &[Crate]) -> Result<()> {
     // Generate the PR body with the list of patched dependencies
     let pr_body = format!(
-        "This PR updates the following dependencies to use their main branches:\n\n{}",
+        "This PR updates the following dependencies to their latest versions:\n\n{}",
         relevant_crates
             .iter()
             .map(|c| format!("- `{}` from `{}`", c.name, c.repo_url))
@@ -423,7 +436,7 @@ fn create_pull_request(branch_name: &str, relevant_crates: &[Crate]) -> Result<(
             "pr",
             "create",
             "--title",
-            "chore: patch to use main branch of iroh dependencies",
+            "chore: release prep",
             "--body",
             &pr_body,
             "--base",

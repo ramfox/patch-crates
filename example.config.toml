@@ -1,17 +1,19 @@
 # Name of the branch you want to create
-branch_name = "patch-iroh-main"
+branch_name = "iroh-X"
 
 # List of directories that need to be patched.
 # These should be absolute paths.
 directories = [
-    "/PATH/TO/irpc",
-    "/PATH/TO/iroh-gossip",
-    "/PATH/TO/iroh-c-ffi",
-    "/PATH/TO/dumbpipe",
-    "/PATH/TO/sendme",
-    "/PATH/TO/iroh-doctor",
-    "/PATH/TO/iroh-blobs",
-    "/PATH/TO/iroh-docs",
+    "/FULL/PATH/Work/irpc",
+    "/FULL/PATH/Work/iroh-c-ffi",
+    "/FULL/PATH/Work/dumbpipe",
+    "/FULL/PATH/Work/iroh-ping",
+    "/FULL/PATH/Work/iroh-gossip",
+    "/FULL/PATH/Work/iroh-blobs",
+    "/FULL/PATH/Work/sendme",
+    "/FULL/PATH/Work/iroh-doctor",
+    "/FULL/PATH/Work/iroh-docs",
+    "/FULL/PATH/Work/iroh-n0des",
 ]
 
 # List of crates to patch and their GitHub repository URLs.
@@ -32,6 +34,14 @@ name = "iroh-relay"
 repo_url = "https://github.com/n0-computer/iroh.git"
 
 [[crates]]
+name = "iroh-ping"
+repo_url = "https://github.com/n0-computer/iroh.git"
+
+[[crates]]
+name = "iroh-n0des"
+repo_url = "https://github.com/n0-computer/iroh.git"
+
+[[crates]]
 name = "iroh-dns-server"
 repo_url = "https://github.com/n0-computer/iroh.git"
 
@@ -45,6 +55,10 @@ repo_url = "https://github.com/n0-computer/iroh-blobs.git"
 
 [[crates]]
 name = "iroh-docs"
+repo_url = "https://github.com/n0-computer/iroh-docs.git"
+
+[[crates]]
+name = "iroh-doctor"
 repo_url = "https://github.com/n0-computer/iroh-docs.git"
 
 
